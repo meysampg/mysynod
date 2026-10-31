@@ -1,0 +1,230 @@
+# package sysdesign
+use std/lists
+use std/look
+use std/math
+use std/net
+use std/sim
+use std/text
+use std/theme
+
+# A look for system design diagrams: components on a grid the program chooses,
+# each card named by its role with its live state beside it, dashed links for
+# the architecture and every message tagged with its type.
+# Pair it with the sketch-style theme github.com/meysampg/sysdesign/whiteboard.
+#
+# Place every component right after spawning it and before anything else, so
+# its card is drawn once, in its cell:
+#   set board to (sysdesign.Layout 3 by 4)
+#   set board to (sysdesign.Place db as "Postgres" in board at column 1 row 1)
+#   sysdesign.Link api to db on board
+
+# A placed component: its title and its cell, in half-cell steps from the centre
+Placed has
+  set Target to sim.Nobody
+  set Title to ""
+  set X to 0
+  set Y to 0
+
+# DX and DY: where the target sits from the source, in half-cell steps
+Linked has
+  set Source to sim.Nobody
+  set Target to sim.Nobody
+  set DX to 0
+  set DY to 0
+
+# A grid of cells that components are placed on, centred in the scene;
+# item i of Xs and Ys is the cell of item i of Nodes, in half-cell steps
+# (item 0 is a placeholder that no component matches)
+Board has
+  set Columns to 1
+  set Rows to 1
+  set Nodes to {sim.Nobody}
+  set Xs to {0}
+  set Ys to {0}
+
+# A board of w columns and h rows
+define Layout [w: number] by [h: number]
+  result (message Board with Columns w, Rows h)
+
+# Put a component, named by its role, in a cell of the board; column 0, row 0
+# is the top left. Gives the board with the component on it.
+define Place [n: node] as [t: text] in [g: Board] at column [c: number] row [r: number]
+  set x to (((c times 2) minus g.Columns) plus 1)
+  set y to (((r times 2) minus g.Rows) plus 1)
+  emit (message Placed with Target n, Title t, X x, Y y) by sim.Nobody
+  result (message Board with Columns g.Columns, Rows g.Rows, Nodes (lists.Append n to g.Nodes), Xs (lists.Append x to g.Xs), Ys (lists.Append y to g.Ys))
+
+# The position of n in the board's lists
+define Spot of [n: node] on [g: Board]
+  set found to 0
+  each i in (lists.Range 0 to ((lists.Size g.Nodes) minus 1))
+    if ((item i of g.Nodes) is n)
+      set found to i
+  result found
+
+# Draw an architecture link between two components placed on the board
+define Link [a: node] to [b: node] on [g: Board]
+  set i to (Spot of a on g)
+  set j to (Spot of b on g)
+  emit (message Linked with Source a, Target b, DX ((item j of g.Xs) minus (item i of g.Xs)), DY ((item j of g.Ys) minus (item i of g.Ys))) by sim.Nobody
+
+# A card is 150 by 40; a half-cell step is 175 across and 37.5 down. The line
+# from a card's centre toward (dx, dy) leaves the card at t times that step.
+define Reach [dx: number] by [dy: number]
+  set ax to (math.Max of dx and (0 minus dx))
+  set ay to (math.Max of dy and (0 minus dy))
+  set t to 1
+  if (ax more than 0)
+    set t to (75 divided by (ax times 175))
+  if (ay more than 0)
+    set t to (math.Min of t and (20 divided by (ay times 37.5)))
+  result t
+
+# The fraction of a turn whose sine is o / 200 (o at most 75 units here)
+define Turn [o: number]
+  set z to (o divided by 200)
+  set z3 to ((z times z) times z)
+  set z5 to ((z3 times z) times z)
+  set z7 to ((z5 times z) times z)
+  set angle to (((z plus (z3 divided by 6)) plus ((z5 times 3) divided by 40)) plus ((z7 times 5) divided by 112))
+  set f to (angle times 0.15915494)
+  if (f less than 0)
+    set f to (f plus 1)
+  result f
+
+# A small dot on the border of n's card, facing (dx, dy), where a link ends;
+# k names it, so it lasts the whole run
+define Edge of [n: node] toward [dx: number] by [dy: number] as [k: text]
+  set t to (Reach dx by dy)
+  set ox to ((t times dx) times 175)
+  set oy to ((t times dy) times 37.5)
+  draw (look.Circle 1) as tip for k
+    Anchor tip with theme.Line
+  look.Orbit tip around (card of n) at (Turn ox)
+  draw (look.Circle 1) as level for k
+    Guide level
+  look.Orbit level around (card of n) at ((Turn oy) plus 0.25)
+  look.Tween "y" of tip to level over 0s
+  result tip
+
+# The exported state of a node, one row per field, beside its card
+define Panel [n: node]
+  set rows to (sim.StateRows n)
+  set above to (card of n)
+  each i in (lists.Range 0 to ((lists.Size rows) minus 1))
+    draw (look.Label (item i of rows)) as row for (text.Join {(sim.Name n), ":", (text.From i)})
+      look.Role row as "value"
+      look.Face row as "mono"
+      look.Fill row with theme.Quiet
+      if (i is 0)
+        look.Place row beside above
+      else
+        look.Place row below above
+    set above to row
+
+# An invisible guide point
+define Guide [s: shape]
+  look.Fill s with theme.Paper
+  look.Stroke s with theme.Paper
+  look.Fade s to 0
+
+# A visible end point of a line; a line between faded points is not seen
+define Anchor [s: shape] with [c: color]
+  look.Fill s with c
+  look.Stroke s with c
+
+# The guide points at the centre of the grid
+define Origins
+  draw (look.Circle 1) as across for 0
+    Guide across
+    look.Tween "x" of across to look.Center over 0s
+    look.Tween "y" of across to look.Center over 0s
+  draw (look.Circle 1) as down for 0
+    Guide down
+    look.Tween "x" of down to look.Center over 0s
+    look.Tween "y" of down to look.Center over 0s
+
+# Guide points half a cell apart: across (175 units) for columns, down (37.5) for rows
+when sim.Started
+  Origins
+  each j in (lists.Range 1 to 9)
+    draw (look.Circle 1) as across for j
+      Guide across
+      look.Orbit across around (across of (j minus 1)) at 0.169565
+    draw (look.Circle 1) as across for (0 minus j)
+      Guide across
+      look.Orbit across around (across of (1 minus j)) at 0.830435
+    draw (look.Circle 1) as down for j
+      Guide down
+      look.Orbit down around (down of (j minus 1)) at 0.280019
+    draw (look.Circle 1) as down for (0 minus j)
+      Guide down
+      look.Orbit down around (down of (1 minus j)) at 0.219981
+
+# The card is drawn once, in its cell, with the role name
+when (sim.Emitted Placed by origin)
+  set n to Placed.Target
+  draw (look.Rect 150 by 40) as box
+    look.Fill box with theme.Paper
+    look.Stroke box with theme.Ink
+  draw (look.Label Placed.Title) as name
+    look.Role name as "label"
+    look.Fill name with theme.Ink
+  draw (look.Group {box, name}) as card for n
+    look.Tween "x" of card to (across of Placed.X) over 0s
+    look.Tween "y" of card to (down of Placed.Y) over 0s
+  look.PopIn card
+  Panel n
+
+when (sim.Changed f of n from old to new)
+  Panel n
+  look.Effect "indicate" on (card of n)
+
+# The line runs from border to border, not centre to centre, and is named
+# by its two ends so every link stays for the whole run
+when (sim.Emitted Linked by origin)
+  set k to (text.Join {(sim.Name Linked.Source), ">", (sim.Name Linked.Target)})
+  set head to (Edge of Linked.Source toward Linked.DX by Linked.DY as (text.Join {k, ":head"}))
+  set finish to (Edge of Linked.Target toward (0 minus Linked.DX) by (0 minus Linked.DY) as (text.Join {k, ":finish"}))
+  draw (look.Line from head to finish) as wire for k
+    look.Stroke wire with theme.Line
+    look.Dash wire on 6 off 4
+  look.Reveal wire
+
+# Every message flies with its type name, so the data flow reads like a diagram
+when (net.Sent m from a to b)
+  draw (look.Label (net.Type m)) as tag for (net.Id m)
+    look.Role tag as "caption"
+    look.Fill tag with (look.MessageColor m)
+  look.Bend tag by 0.15
+  look.Flight tag from (card of a) to (card of b) for m
+
+when (net.Arrived m from a to b)
+  look.Remove (tag of (net.Id m))
+
+when (net.Dropped m from a to b because r)
+  look.Fill (tag of (net.Id m)) with theme.Critical
+  look.Remove (tag of (net.Id m))
+
+when (net.Partitioned left from right)
+  each n in left
+    look.Dash (card of n) on 4 off 4
+  each n in right
+    look.Dash (card of n) on 4 off 4
+
+when net.Healed
+  each n in sim.Nodes
+    look.Dash (card of n) on 0 off 0
+
+when (sim.Crashed n)
+  look.Stroke (card of n) with theme.Critical
+  look.Effect "flash" on (card of n)
+
+when (sim.Restarted n)
+  look.Stroke (card of n) with theme.Ink
+  Panel n
+
+# A component that records a domain event pulses
+when (sim.Emitted event by origin)
+  if (origin is not sim.Nobody)
+    look.Pulse (card of origin)

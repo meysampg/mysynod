@@ -1,0 +1,105 @@
+# theme whiteboard
+# A hand-drawn whiteboard for system design: the sketch style on white paper,
+# marker colors, outlined cards and a handwritten face.
+
+define Paper
+  result #FBFAF6
+
+define Ink
+  result #1E1E1E
+
+define Line
+  result #495057
+
+define Quiet
+  result #6C757D
+
+define Accent
+  result #E8590C
+
+define Good
+  result #2F9E44
+
+define Warning
+  result #F08C00
+
+define Critical
+  result #E03131
+
+define Message1
+  result #1971C2
+
+define Message2
+  result #E8590C
+
+define Message3
+  result #2F9E44
+
+define Message4
+  result #9C36B5
+
+define Vignette
+  result 0
+
+define Sketch
+  result 0.7
+
+define Glow
+  result 0
+
+define Shadow
+  result 0.1
+
+define StrokeWidth
+  result 2
+
+define CornerRadius
+  result 8
+
+define NodeShape
+  result "card"
+
+define NodeFill
+  result "outline"
+
+define LinkOpacity
+  result 0.8
+
+define Easing
+  result "smooth"
+
+define Drift
+  result 0
+
+define Sans
+  result "Shantell Sans"
+
+define Mono
+  result "JetBrains Mono"
+
+define TitleSize
+  result 26
+
+define LabelSize
+  result 16
+
+define ValueSize
+  result 11
+
+define CaptionSize
+  result 12
+
+define TitleWeight
+  result 700
+
+define LabelWeight
+  result 500
+
+define Tracking
+  result 0
+
+define Margin
+  result 24
+
+define Fill
+  result 1.2

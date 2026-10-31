@@ -1,0 +1,42 @@
+# package main
+use github.com/meysampg/mysynod/cdccache/api
+use github.com/meysampg/mysynod/cdccache/app
+use github.com/meysampg/mysynod/cdccache/cache
+use github.com/meysampg/mysynod/cdccache/db
+use github.com/meysampg/mysynod/sysdesign
+use github.com/meysampg/mysynod/sysdesign/whiteboard
+use std/lesson
+use std/lists
+use std/net
+use std/sim
+
+# For comparison: the endpoint writes Postgres, then updates Redis itself
+define main
+  sim.Seed 1
+  net.Latency between 5ms and 15ms
+  set server to (sim.Spawn app)
+  set database to (sim.Spawn db)
+  set store to (sim.Spawn cache)
+  set board to (sysdesign.Layout 3 by 2)
+  set board to (sysdesign.Place server as "API server" in board at column 1 row 0)
+  set board to (sysdesign.Place database as "Postgres" in board at column 2 row 1)
+  set board to (sysdesign.Place store as "Redis" in board at column 0 row 1)
+  sysdesign.Link server to database on board
+  sysdesign.Link server to store on board
+  app.Wire server to store and database mode "dual"
+  lesson.Note "The endpoint writes Postgres, then sets Redis directly."
+  each i in (lists.Range 1 to 17)
+    after (i times 200ms)
+      deliver (message api.Read with Key "price") to server
+  after 250ms
+    deliver (message api.Write with Key "price", Value "$10") to server
+    lesson.Note "Write $10: the endpoint commits to Postgres, then sets Redis."
+  after 1s
+    deliver (message api.Write with Key "price", Value "$12") to server
+  after 1500ms
+    net.DropNext "Set" from server to store
+    deliver (message api.Write with Key "price", Value "$15") to server
+    lesson.Ask "Postgres commits $15, but the endpoint's write to Redis is lost. What do readers see?" choosing {"$15, as soon as the commit is done", "$12, until something else writes the key", "Nothing: the read fails", "$15, because Postgres retries the cache write"}
+  after 2500ms
+    lesson.Note "Postgres says $15, Redis still says $12, and nothing will repair it."
+  sim.StopAt 3700ms

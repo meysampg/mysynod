@@ -1,0 +1,59 @@
+# package main
+use github.com/meysampg/mysynod/cdccache/api
+use github.com/meysampg/mysynod/cdccache/app
+use github.com/meysampg/mysynod/cdccache/broker
+use github.com/meysampg/mysynod/cdccache/cache
+use github.com/meysampg/mysynod/cdccache/db
+use github.com/meysampg/mysynod/sysdesign
+use github.com/meysampg/mysynod/sysdesign/whiteboard
+use std/lesson
+use std/lists
+use std/net
+use std/sim
+
+# The endpoint writes only Postgres. Postgres streams its WAL into a Kafka topic,
+# and every consumer reads the topic at its own offset and updates itself.
+define main
+  sim.Seed 1
+  net.Latency between 5ms and 15ms
+  set server to (sim.Spawn app)
+  set database to (sim.Spawn db)
+  set topic to (sim.Spawn broker)
+  set store to (sim.Spawn cache)
+  set search to (sim.Spawn cache)
+  set analytics to (sim.Spawn cache)
+  set board to (sysdesign.Layout 3 by 4)
+  set board to (sysdesign.Place server as "API server" in board at column 1 row 0)
+  set board to (sysdesign.Place database as "Postgres" in board at column 1 row 1)
+  set board to (sysdesign.Place topic as "Kafka (WAL)" in board at column 1 row 2)
+  set board to (sysdesign.Place store as "Redis" in board at column 0 row 3)
+  set board to (sysdesign.Place search as "Search index" in board at column 1 row 3)
+  set board to (sysdesign.Place analytics as "Analytics" in board at column 2 row 3)
+  sysdesign.Link server to database on board
+  sysdesign.Link server to store on board
+  sysdesign.Link database to topic on board
+  sysdesign.Link topic to store on board
+  sysdesign.Link topic to search on board
+  sysdesign.Link topic to analytics on board
+  app.Wire server to store and database mode "cdc"
+  db.Stream database to topic
+  cache.Follow store from topic
+  cache.Follow search from topic
+  cache.Follow analytics from topic
+  lesson.Note "The endpoint writes only Postgres; its WAL in Kafka updates every consumer."
+  each i in (lists.Range 1 to 17)
+    after (i times 200ms)
+      deliver (message api.Read with Key "price") to server
+  after 250ms
+    deliver (message api.Write with Key "price", Value "$10") to server
+    lesson.Note "Write $10: Postgres commits it and appends it to Kafka; each consumer pulls it."
+  after 1s
+    deliver (message api.Write with Key "price", Value "$12") to server
+  after 1500ms
+    net.Partition {topic} from {store}
+    deliver (message api.Write with Key "price", Value "$15") to server
+    lesson.Ask "Redis cannot reach Kafka while $15 is committed. What happens?" choosing {"Redis keeps $12 for good: the change is lost", "Search and Analytics get $15 now; Redis catches up once it can reach Kafka", "Every consumer waits for Redis", "The write to Postgres fails"}
+  after 2500ms
+    net.Heal
+    lesson.Note "Redis reconnects, re-reads from its own offset and applies $15."
+  sim.StopAt 3700ms

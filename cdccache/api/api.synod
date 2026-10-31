@@ -1,0 +1,74 @@
+# package api
+# A client reads a key through an API server
+Read has
+  set Key to ""
+
+# A client writes a key through an API server
+Write has
+  set Key to ""
+  set Value to ""
+
+Lookup has
+  set Key to ""
+
+CacheReply has
+  set Key to ""
+  set Value to ""
+  set Found to false
+
+Query has
+  set Key to ""
+
+# A row as the database holds it, with the log sequence number of its last write
+Rows has
+  set Key to ""
+  set Value to ""
+  set Lsn to 0
+
+Update has
+  set Key to ""
+  set Value to ""
+
+Committed has
+  set Key to ""
+  set Value to ""
+  set Lsn to 0
+
+# Cache-aside fill after a miss; the cache keeps it only if it is newer
+Fill has
+  set Key to ""
+  set Value to ""
+  set Lsn to 0
+
+# Direct write from the endpoint: no version, last arrival wins
+Set has
+  set Key to ""
+  set Value to ""
+
+# Postgres publishes each WAL entry, a full row image with its LSN, to the topic
+Publish has
+  set Key to ""
+  set Value to ""
+  set Lsn to 0
+
+# A consumer asks the topic for the record at its own offset
+Poll has
+  set From to 0
+
+Deliver has
+  set Key to ""
+  set Value to ""
+  set Lsn to 0
+  set Offset to 0
+
+# Emitted by an API server when it answers a read
+Served has
+  set Key to ""
+  set Value to ""
+  set Hit to false
+
+# Emitted by an API server when a write is committed
+Written has
+  set Key to ""
+  set Value to ""
+  set Lsn to 0

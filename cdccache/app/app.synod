@@ -1,0 +1,40 @@
+# package app
+use github.com/meysampg/mysynod/cdccache/api
+use std/net
+use std/sim
+
+# Mode "cdc": the endpoint writes only the database and CDC updates the cache.
+# Mode "dual": the endpoint also writes the cache itself after the commit.
+Node has
+  set Mode to "cdc"
+  set Cache to sim.Nobody
+  set Db to sim.Nobody
+
+define Wire [n: Node] to [c: node] and [d: node] mode [m: text]
+  set n.Cache to c
+  set n.Db to d
+  set n.Mode to m
+
+# Reads are cache-aside
+when [n: Node] (sim.Delivered api.Read)
+  net.Send (message api.Lookup with Key api.Read.Key) from n to n.Cache
+
+when [n: Node] (net.Received api.CacheReply from store)
+  if api.CacheReply.Found
+    emit (message api.Served with Key api.CacheReply.Key, Value api.CacheReply.Value, Hit true) by n
+  else
+    net.Send (message api.Query with Key api.CacheReply.Key) from n to n.Db
+
+when [n: Node] (net.Received api.Rows from database)
+  if (api.Rows.Lsn more than 0)
+    net.Send (message api.Fill with Key api.Rows.Key, Value api.Rows.Value, Lsn api.Rows.Lsn) from n to n.Cache
+  emit (message api.Served with Key api.Rows.Key, Value api.Rows.Value) by n
+
+# Writes go to the database only
+when [n: Node] (sim.Delivered api.Write)
+  net.Send (message api.Update with Key api.Write.Key, Value api.Write.Value) from n to n.Db
+
+when [n: Node] (net.Received api.Committed from database)
+  emit (message api.Written with Key api.Committed.Key, Value api.Committed.Value, Lsn api.Committed.Lsn) by n
+  if (n.Mode is "dual")
+    net.Send (message api.Set with Key api.Committed.Key, Value api.Committed.Value) from n to n.Cache

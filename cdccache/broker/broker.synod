@@ -1,0 +1,30 @@
+# package broker
+use github.com/meysampg/mysynod/cdccache/api
+use std/lists
+use std/maps
+use std/net
+
+# A Kafka-style topic with one partition: an append-only log that any number
+# of consumers read, each at its own offset
+Node has
+  set Offset to 0
+  set log to {}
+  set waiting to {}
+
+# Send the record at offset o, or park the consumer until it is written
+define [n: Node] Serve [c: node] from [o: number]
+  if (o less than (lists.Size n.log))
+    set record to (item o of n.log)
+    net.Send (message api.Deliver with Key record.Key, Value record.Value, Lsn record.Lsn, Offset o) from n to c
+    set n.waiting to (maps.Without c from n.waiting)
+  else
+    set item c of n.waiting to o
+
+when [n: Node] (net.Received api.Publish from producer)
+  set n.log to (lists.Append api.Publish to n.log)
+  set n.Offset to (lists.Size n.log)
+  each c in (maps.Keys n.waiting)
+    n.Serve c from (item c of n.waiting)
+
+when [n: Node] (net.Received api.Poll from consumer)
+  n.Serve consumer from api.Poll.From

@@ -1,0 +1,33 @@
+# package db
+use github.com/meysampg/mysynod/cdccache/api
+use std/net
+use std/sim
+
+Node has
+  set Rows to {}
+  set Lsn to 0
+  set versions to {}
+  set topic to sim.Nobody
+
+# Stream the write-ahead log into a topic
+define Stream [n: Node] to [t: node]
+  set n.topic to t
+
+# Every commit gets the next log sequence number and its WAL entry goes to the topic
+when [n: Node] (net.Received api.Update from writer)
+  after 20ms
+    set n.Lsn to (n.Lsn plus 1)
+    set item api.Update.Key of n.Rows to api.Update.Value
+    set item api.Update.Key of n.versions to n.Lsn
+    net.Send (message api.Committed with Key api.Update.Key, Value api.Update.Value, Lsn n.Lsn) from n to writer
+    if (n.topic is not sim.Nobody)
+      net.Send (message api.Publish with Key api.Update.Key, Value api.Update.Value, Lsn n.Lsn) from n to n.topic
+
+when [n: Node] (net.Received api.Query from asker)
+  after 10ms
+    set value to ""
+    set lsn to 0
+    if (api.Query.Key is in n.Rows)
+      set value to (item api.Query.Key of n.Rows)
+      set lsn to (item api.Query.Key of n.versions)
+    net.Send (message api.Rows with Key api.Query.Key, Value value, Lsn lsn) from n to asker

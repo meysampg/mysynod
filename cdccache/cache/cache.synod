@@ -1,0 +1,54 @@
+# package cache
+use github.com/meysampg/mysynod/cdccache/api
+use std/net
+use std/sim
+use std/time
+
+# A key-value store (Redis, a search index, an analytics table…). When it
+# follows a topic it is a CDC consumer: it reads the WAL at its own offset and
+# updates itself; the offset moves only after a change is applied.
+Node has
+  set Entries to {}
+  set Offset to 0
+  set versions to {}
+  set topic to sim.Nobody
+  set last to -1
+
+define Follow [n: Node] from [t: node]
+  set n.topic to t
+
+# Keep a value only if it is newer than the one stored
+define [n: Node] Store [k: text] as [v: text] at [lsn: number]
+  set current to 0
+  if (k is in n.versions)
+    set current to (item k of n.versions)
+  if (lsn more than current)
+    set item k of n.Entries to v
+    set item k of n.versions to lsn
+
+# Poll again when no progress was made since the last tick
+define [n: Node] start
+  time.Every 250ms
+    if ((n.topic is not sim.Nobody) and (n.Offset is n.last))
+      net.Send (message api.Poll with From n.Offset) from n to n.topic
+    set n.last to n.Offset
+
+when [n: Node] (net.Received api.Deliver from source)
+  if (api.Deliver.Offset is n.Offset)
+    n.Store api.Deliver.Key as api.Deliver.Value at api.Deliver.Lsn
+    set n.Offset to (n.Offset plus 1)
+    net.Send (message api.Poll with From n.Offset) from n to n.topic
+
+when [n: Node] (net.Received api.Lookup from asker)
+  set k to api.Lookup.Key
+  if (k is in n.Entries)
+    net.Send (message api.CacheReply with Key k, Value (item k of n.Entries), Found true) from n to asker
+  else
+    net.Send (message api.CacheReply with Key k) from n to asker
+
+when [n: Node] (net.Received api.Fill from filler)
+  n.Store api.Fill.Key as api.Fill.Value at api.Fill.Lsn
+
+# A direct write from an endpoint overwrites whatever is there
+when [n: Node] (net.Received api.Set from writer)
+  set item api.Set.Key of n.Entries to api.Set.Value
